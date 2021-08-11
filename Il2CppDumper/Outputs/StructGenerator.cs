@@ -1135,7 +1135,7 @@ namespace Il2CppDumper
                 methodsBuilder.Append($"\tstatic {info.TypeInfoPointer.Signature} TypeInfo;\n");
                 staticInitializer.Append($"\t{info.TypeInfoPointer.Signature} {info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})nullptr;\n");
                 initializer.Append(
-                    $"\t{info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})0x{info.TypeInfoPointer.Address:x8};\n");
+                    $"\t{info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})(baseLib + 0x{info.TypeInfoPointer.Address:X});\n");
             }
 
             foreach (var method in info.Methods)
@@ -1144,7 +1144,7 @@ namespace Il2CppDumper
                 var typePointer = GetPointerString(method, false);
                 var initializerPointer = GetPointerString(method, true, $"{info.TypeName}::{method.MethodName}");
                 staticInitializer.Append($"{initializerPointer} = ({typePointer})nullptr;\n");
-                initializer.Append($"\t{info.TypeName}::{method.MethodName} = ({typePointer})(baseLib + 0x{method.Offset:x8});\n");
+                initializer.Append($"\t{info.TypeName}::{method.MethodName} = ({typePointer})(baseLib + 0x{method.Offset:X});\n");
             }
             methodsBuilder.Append("};\n");
 
