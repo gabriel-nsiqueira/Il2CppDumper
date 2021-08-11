@@ -724,7 +724,8 @@ namespace Il2CppDumper
             {
                 var method = new StructMethod();
                 var methodDef = metadata.methodDefs[i];
-                var methodPointer = il2Cpp.GetMethodPointer(metadata.GetStringFromIndex(imageDef.nameIndex), methodDef);
+                var h = il2Cpp.GetMethodPointer(metadata.GetStringFromIndex(imageDef.nameIndex), methodDef);
+                var methodPointer = h > 0 ? il2Cpp.GetRVA(h) : 0;
                 var methodName = FixName(metadata.GetStringFromIndex(methodDef.nameIndex));
                 var methodReturnType = il2Cpp.types[methodDef.returnType];
                 var methodReturnTypeSignature = ParseType(methodReturnType);
