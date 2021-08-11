@@ -79,7 +79,7 @@ namespace Il2CppDumper
                 for (int typeIndex = imageDef.typeStart; typeIndex < typeEnd; typeIndex++)
                 {
                     var typeDef = metadata.typeDefs[typeIndex];
-                    AddStruct(typeDef);
+                    AddStruct(typeDef, imageDef);
                     var typeName = executor.GetTypeDefName(typeDef, true, true);
                     var methodEnd = typeDef.methodStart + typeDef.method_count;
                     for (var i = typeDef.methodStart; i < methodEnd; ++i)
@@ -364,44 +364,73 @@ namespace Il2CppDumper
             var headerStruct = new StringBuilder();
             foreach (var info in structInfoList)
             {
+                try
+                {
+                    if (info.Type.byrefTypeIndex > 0)
+                    {
+                        var a = il2Cpp.types[info.Type.byvalTypeIndex];
+                        if (a != null) typeToTypeInfo.TryGetValue(a, out info.TypeInfoPointer);
+                    }
+                }
+                catch(Exception)
+                {
+                }
+
                 structInfoWithStructName.Add(info.TypeName + "_o", info);
             }
+
+            var il2CppInitializer = new StringBuilder();
+            var il2CppStaticInitializer = new StringBuilder();
+            var methodsBuilder = new StringBuilder();
             foreach (var info in structInfoList)
             {
-                headerStruct.Append(RecursionStructInfo(info));
+                headerStruct.Append(RecursionStructInfo(info, il2CppInitializer, il2CppStaticInitializer, methodsBuilder));
             }
-            var sb = new StringBuilder();
-            sb.Append(HeaderConstants.GenericHeader);
+            var il2cppH = new StringBuilder();
+            var il2cppCpp = new StringBuilder();
+            il2cppH.Append(HeaderConstants.GenericHeader);
             switch (il2Cpp.Version)
             {
                 case 22:
-                    sb.Append(HeaderConstants.HeaderV22);
+                    il2cppH.Append(HeaderConstants.HeaderV22);
                     break;
                 case 23:
                 case 24:
-                    sb.Append(HeaderConstants.HeaderV240);
+                    il2cppH.Append(HeaderConstants.HeaderV240);
                     break;
                 case 24.1:
-                    sb.Append(HeaderConstants.HeaderV241);
+                    il2cppH.Append(HeaderConstants.HeaderV241);
                     break;
                 case 24.2:
                 case 24.3:
                 case 24.4: //TODO
-                    sb.Append(HeaderConstants.HeaderV242);
+                    il2cppH.Append(HeaderConstants.HeaderV242);
                     break;
                 case 27:
                 case 27.1: //TODO
-                    sb.Append(HeaderConstants.HeaderV27);
+                    il2cppH.Append(HeaderConstants.HeaderV27);
                     break;
                 default:
                     Console.WriteLine($"WARNING: This il2cpp version [{il2Cpp.Version}] does not support generating .h files");
                     return;
             }
-            sb.Append(headerStruct);
-            sb.Append(arrayClassHeader);
-            sb.Append(methodInfoHeader);
-            File.WriteAllText(outputDir + "il2cpp.h", sb.ToString());
+            il2cppH.Append(headerStruct);
+            il2cppH.Append(arrayClassHeader);
+            il2cppH.Append(methodInfoHeader);
+            il2cppH.Append(methodsBuilder);
+            il2cppH.Append("void init_il2cpp(uint64_t baseLib);");
+
+            il2cppCpp.Append("#include \"il2cpp.h\"\n\n");
+            il2cppCpp.Append(il2CppStaticInitializer);
+            il2cppCpp.Append("void init_il2cpp(uint64_t baseLib) {\n");
+            il2cppCpp.Append(il2CppInitializer);
+            il2cppCpp.Append("}\n");
+            
+            File.WriteAllText(outputDir + "il2cpp.h", il2cppH.ToString());
+            File.WriteAllText(outputDir + "il2cpp.cpp", il2cppCpp.ToString());
         }
+
+        private Dictionary<Il2CppType, ScriptMetadata> typeToTypeInfo = new Dictionary<Il2CppType, ScriptMetadata>();
 
         private void AddMetadataUsageTypeInfo(ScriptJson json, uint index, ulong address)
         {
@@ -420,6 +449,7 @@ namespace Il2CppDumper
             {
                 scriptMetadata.Signature = FixName(signature) + "_c*";
             }
+            typeToTypeInfo.Add(type, scriptMetadata);
         }
 
         private void AddMetadataUsageIl2CppType(ScriptJson json, uint index, ulong address)
@@ -492,6 +522,7 @@ namespace Il2CppDumper
 
         private static string FixName(string str)
         {
+            if (str == "xor" || str == "or" || str == "typename" || str == "this" || str == "not") str = "_" + str;
             if (keyword.Contains(str))
             {
                 str = "_" + str;
@@ -643,16 +674,18 @@ namespace Il2CppDumper
             }
         }
 
-        private void AddStruct(Il2CppTypeDefinition typeDef)
+        private void AddStruct(Il2CppTypeDefinition typeDef, Il2CppImageDefinition imageDef)
         {
             var structInfo = new StructInfo();
             structInfoList.Add(structInfo);
             structInfo.TypeName = structNameDic[typeDef];
             structInfo.IsValueType = typeDef.IsValueType;
+            structInfo.Type = typeDef;
             AddParents(typeDef, structInfo);
             AddFields(typeDef, structInfo, null);
             AddVTableMethod(structInfo, typeDef);
             AddRGCTX(structInfo, typeDef);
+            AddMethods(structInfo, typeDef, imageDef);
         }
 
         private void AddGenericClassStruct(ulong pointer)
@@ -680,6 +713,62 @@ namespace Il2CppDumper
                         structInfo.Parent = GetIl2CppStructName(parent);
                     }
                 }
+            }
+        }
+
+        private void AddMethods(StructInfo info, Il2CppTypeDefinition typeDef, Il2CppImageDefinition imageDef)
+        {
+            var nameBank = new Dictionary<string, int>();
+            var methodEnd = typeDef.methodStart + typeDef.method_count;
+            for (var i = typeDef.methodStart; i < methodEnd; i++)
+            {
+                var method = new StructMethod();
+                var methodDef = metadata.methodDefs[i];
+                var methodPointer = il2Cpp.GetMethodPointer(metadata.GetStringFromIndex(imageDef.nameIndex), methodDef);
+                var methodName = FixName(metadata.GetStringFromIndex(methodDef.nameIndex));
+                var methodReturnType = il2Cpp.types[methodDef.returnType];
+                var methodReturnTypeSignature = ParseType(methodReturnType);
+                if (methodName == "TypeInfo") methodName = "_" + methodName;
+                var nameUsageCount = 0;
+                if (nameBank.ContainsKey(methodName))
+                {
+                    nameUsageCount = nameBank[methodName];
+                }
+
+                nameBank[methodName] = nameUsageCount + 1;
+                if(nameUsageCount > 0) methodName += "_" + nameUsageCount;
+
+                method.MethodName = methodName;
+                method.Offset = methodPointer;
+                method.ReturnTypeSignature = methodReturnTypeSignature;
+                method.IsStatic = (methodDef.flags & METHOD_ATTRIBUTE_STATIC) != 0;
+                var parametersEnd = methodDef.parameterStart + methodDef.parameterCount;
+                if(!method.IsStatic) method.Parameters.Add(new StructMethodParameter
+                {
+                    Name = "__this",
+                    TypeSignature = ParseType(il2Cpp.types[typeDef.byvalTypeIndex])
+                });
+                for (var j = methodDef.parameterStart; j < parametersEnd; j++)
+                {
+                    var parameterDef = metadata.parameterDefs[j];
+                    var parameterName = metadata.GetStringFromIndex(parameterDef.nameIndex);
+                    if (parameterName == "method" || parameterName == "__this") parameterName = "_" + parameterName;
+                    var parameterType = il2Cpp.types[parameterDef.typeIndex];
+                    var parameterTypeSignature = ParseType(parameterType);
+                    var parameter = new StructMethodParameter
+                    {
+                        Name = FixName(parameterName),
+                        TypeSignature = parameterTypeSignature
+                    };
+                    
+                    method.Parameters.Add(parameter);
+                } 
+                method.Parameters.Add(new StructMethodParameter
+                {
+                    Name = "method",
+                    TypeSignature = "MethodInfo*"
+                });
+                info.Methods.Add(method);
             }
         }
 
@@ -894,7 +983,34 @@ namespace Il2CppDumper
             return fixName;
         }
 
-        private string RecursionStructInfo(StructInfo info)
+        private string GetPointerString(StructMethod method, bool showNames, string customName = null)
+        {
+            var sb = new StringBuilder();
+            sb.Append(method.ReturnTypeSignature).Append(" (*");
+            if (showNames) sb.Append(customName ?? method.MethodName);
+            sb.Append(")(");
+
+            var isFirst = true;
+            foreach (var parameter in method.Parameters)
+            {
+                if (!isFirst)
+                {
+                    sb.Append(", ");
+                }
+                else
+                {
+                    isFirst = false;
+                }
+                sb.Append(parameter.TypeSignature);
+                if (showNames) sb.Append(' ').Append(parameter.Name);
+            }
+
+            sb.Append(")");
+
+            return sb.ToString();
+        }
+
+        private string RecursionStructInfo(StructInfo info, StringBuilder initializer, StringBuilder staticInitializer, StringBuilder methodsBuilder)
         {
             if (!structCache.Add(info))
             {
@@ -907,7 +1023,7 @@ namespace Il2CppDumper
             if (info.Parent != null)
             {
                 var parentStructName = info.Parent + "_o";
-                pre.Append(RecursionStructInfo(structInfoWithStructName[parentStructName]));
+                pre.Append(RecursionStructInfo(structInfoWithStructName[parentStructName], initializer, staticInitializer, methodsBuilder));
                 sb.Append($"struct {info.TypeName}_Fields : {info.Parent}_Fields {{\n");
                 // C style
                 //sb.Append($"struct {info.TypeName}_Fields {{\n");
@@ -936,7 +1052,7 @@ namespace Il2CppDumper
                 if (field.IsValueType)
                 {
                     var fieldInfo = structInfoWithStructName[field.FieldTypeName];
-                    pre.Append(RecursionStructInfo(fieldInfo));
+                    pre.Append(RecursionStructInfo(fieldInfo, initializer, staticInitializer, methodsBuilder));
                 }
                 if (field.IsCustomType)
                 {
@@ -1002,13 +1118,42 @@ namespace Il2CppDumper
             sb.Append($"\t{info.TypeName}_Fields fields;\n");
             sb.Append("};\n");
 
+            methodsBuilder.Append($"class {info.TypeName} {{\npublic:\n");
+            string sig = null;
+            try
+            {
+                sig = ParseType(il2Cpp.types[info.Type.byrefTypeIndex]);
+            }
+            catch (Exception)
+            {
+                // ignored
+            }
+
+            if (info.TypeInfoPointer != null && info.TypeInfoPointer.Address > 0)
+            {
+                methodsBuilder.Append($"\tstatic {info.TypeInfoPointer.Signature} TypeInfo;\n");
+                staticInitializer.Append($"\t{info.TypeInfoPointer.Signature} {info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})nullptr;\n");
+                initializer.Append(
+                    $"\t{info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})0x{info.TypeInfoPointer.Address:x8};\n");
+            }
+
+            foreach (var method in info.Methods)
+            {
+                methodsBuilder.Append($"\tstatic {GetPointerString(method, true)};\n");
+                var typePointer = GetPointerString(method, false);
+                var initializerPointer = GetPointerString(method, true, $"{info.TypeName}::{method.MethodName}");
+                staticInitializer.Append($"{initializerPointer} = ({typePointer})nullptr;\n");
+                initializer.Append($"\t{info.TypeName}::{method.MethodName} = ({typePointer})(baseLib + 0x{method.Offset:x8});\n");
+            }
+            methodsBuilder.Append("};\n");
+
             sb.Append($"struct {info.TypeName}_StaticFields {{\n");
             foreach (var field in info.StaticFields)
             {
                 if (field.IsValueType)
                 {
                     var fieldInfo = structInfoWithStructName[field.FieldTypeName];
-                    pre.Append(RecursionStructInfo(fieldInfo));
+                    pre.Append(RecursionStructInfo(fieldInfo, initializer, staticInitializer, methodsBuilder));
                 }
                 if (field.IsCustomType)
                 {

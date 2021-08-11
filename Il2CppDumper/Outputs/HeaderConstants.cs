@@ -3,7 +3,11 @@
     public static class HeaderConstants
     {
         public readonly static string GenericHeader =
-@"typedef void(*Il2CppMethodPointer)();
+@"#pragma once
+#undef DEBUG
+#include <stdint.h>
+#include <stddef.h>
+typedef void(*Il2CppMethodPointer)();
 
 struct MethodInfo;
 
