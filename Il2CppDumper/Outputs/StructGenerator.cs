@@ -364,18 +364,12 @@ namespace Il2CppDumper
             var headerStruct = new StringBuilder();
             foreach (var info in structInfoList)
             {
-                try
+                ScriptMetadata a = null;
+                foreach (var pair in typeToTypeInfo.Where(pair => pair.Value.Signature == info.TypeName + "_c*"))
                 {
-                    if (info.Type.byrefTypeIndex > 0)
-                    {
-                        var a = il2Cpp.types[info.Type.byvalTypeIndex];
-                        if (a != null) typeToTypeInfo.TryGetValue(a, out info.TypeInfoPointer);
-                    }
+                    a = pair.Value;
                 }
-                catch(Exception)
-                {
-                }
-
+                info.TypeInfoPointer = a;
                 structInfoWithStructName.Add(info.TypeName + "_o", info);
             }
 
@@ -418,15 +412,15 @@ namespace Il2CppDumper
             il2cppH.Append(arrayClassHeader);
             il2cppH.Append(methodInfoHeader);
             il2cppH.Append(methodsBuilder);
-            il2cppH.Append("void init_il2cpp(uint64_t baseLib);");
+            il2cppH.Append("void init_il2cpp(uint64_t (*getRealAddress)(uint64_t));");
 
             il2cppCpp.Append("#include \"il2cpp.h\"\n\n");
             il2cppCpp.Append(il2CppStaticInitializer);
-            il2cppCpp.Append("void init_il2cpp(uint64_t baseLib) {\n");
+            il2cppCpp.Append("void init_il2cpp(uint64_t (*getRealAddress)(uint64_t)) {\n");
             il2cppCpp.Append(il2CppInitializer);
             il2cppCpp.Append("}\n");
             
-            File.WriteAllText(outputDir + "il2cpp.h", il2cppH.ToString());
+            // File.WriteAllText(outputDir + "il2cpp.h", il2cppH.ToString());
             File.WriteAllText(outputDir + "il2cpp.cpp", il2cppCpp.ToString());
         }
 
@@ -685,7 +679,7 @@ namespace Il2CppDumper
             AddFields(typeDef, structInfo, null);
             AddVTableMethod(structInfo, typeDef);
             AddRGCTX(structInfo, typeDef);
-            AddMethods(structInfo, typeDef, imageDef);
+            if(!metadata.GetStringFromIndex(typeDef.namespaceIndex).StartsWith("Mono.")) AddMethods(structInfo, typeDef, imageDef);
         }
 
         private void AddGenericClassStruct(ulong pointer)
@@ -726,6 +720,7 @@ namespace Il2CppDumper
                 var methodDef = metadata.methodDefs[i];
                 var h = il2Cpp.GetMethodPointer(metadata.GetStringFromIndex(imageDef.nameIndex), methodDef);
                 var methodPointer = h > 0 ? il2Cpp.GetRVA(h) : 0;
+                if(methodPointer == 0) continue;
                 var methodName = FixName(metadata.GetStringFromIndex(methodDef.nameIndex));
                 var methodReturnType = il2Cpp.types[methodDef.returnType];
                 var methodReturnTypeSignature = ParseType(methodReturnType);
@@ -1133,19 +1128,25 @@ namespace Il2CppDumper
             if (info.TypeInfoPointer != null && info.TypeInfoPointer.Address > 0)
             {
                 methodsBuilder.Append($"\tstatic {info.TypeInfoPointer.Signature} TypeInfo;\n");
-                staticInitializer.Append($"\t{info.TypeInfoPointer.Signature} {info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})nullptr;\n");
+                staticInitializer.Append($"{info.TypeInfoPointer.Signature} {info.TypeName}::TypeInfo = nullptr;\n");
                 initializer.Append(
-                    $"\t{info.TypeName}::TypeInfo = ({info.TypeInfoPointer.Signature})(baseLib + 0x{info.TypeInfoPointer.Address:X});\n");
+                    $"\t*(void**)&{info.TypeName}::TypeInfo = (void*)getRealAddress(0x{info.TypeInfoPointer.Address:X});\n");
             }
+
+            var initializeMethod = new StringBuilder();
 
             foreach (var method in info.Methods)
             {
                 methodsBuilder.Append($"\tstatic {GetPointerString(method, true)};\n");
-                var typePointer = GetPointerString(method, false);
+                // var typePointer = GetPointerString(method, false);
                 var initializerPointer = GetPointerString(method, true, $"{info.TypeName}::{method.MethodName}");
-                staticInitializer.Append($"{initializerPointer} = ({typePointer})nullptr;\n");
-                initializer.Append($"\t{info.TypeName}::{method.MethodName} = ({typePointer})(baseLib + 0x{method.Offset:X});\n");
+                staticInitializer.Append($"{initializerPointer} = nullptr;\n");
+                initializeMethod.Append($"\t*(void**)&{info.TypeName}::{method.MethodName} = (void*)getRealAddress(0x{method.Offset:X});\n");
             }
+            staticInitializer.Append($"static void initialize_{info.TypeName}(uint64_t(*getRealAddress)(uint64_t)){{");
+            staticInitializer.Append(initializeMethod);
+            staticInitializer.Append("}\n");
+            initializer.Append($"\tinitialize_{info.TypeName}(getRealAddress);\n");
             methodsBuilder.Append("};\n");
 
             sb.Append($"struct {info.TypeName}_StaticFields {{\n");
