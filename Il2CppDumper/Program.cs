@@ -110,7 +110,7 @@ namespace Il2CppDumper
             if (config.RequireAnyKey)
             {
                 Console.WriteLine("Press any key to exit...");
-                Console.ReadKey(true);
+                Console.Read();
             }
         }
 
