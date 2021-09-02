@@ -420,7 +420,7 @@ namespace Il2CppDumper
             il2cppCpp.Append(il2CppInitializer);
             il2cppCpp.Append("}\n");
             
-            // File.WriteAllText(outputDir + "il2cpp.h", il2cppH.ToString());
+            File.WriteAllText(outputDir + "il2cpp.h", il2cppH.ToString());
             File.WriteAllText(outputDir + "il2cpp.cpp", il2cppCpp.ToString());
         }
 
