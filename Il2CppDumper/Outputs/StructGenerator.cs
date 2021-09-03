@@ -670,6 +670,8 @@ namespace Il2CppDumper
 
         private void AddStruct(Il2CppTypeDefinition typeDef, Il2CppImageDefinition imageDef)
         {
+            var namespaze = metadata.GetStringFromIndex(typeDef.namespaceIndex);
+            if(namespaze.StartsWith("Steamworks")) return;
             var structInfo = new StructInfo();
             structInfoList.Add(structInfo);
             structInfo.TypeName = structNameDic[typeDef];
@@ -679,7 +681,7 @@ namespace Il2CppDumper
             AddFields(typeDef, structInfo, null);
             AddVTableMethod(structInfo, typeDef);
             AddRGCTX(structInfo, typeDef);
-            if(!metadata.GetStringFromIndex(typeDef.namespaceIndex).StartsWith("Mono.")) AddMethods(structInfo, typeDef, imageDef);
+            if(!namespaze.StartsWith("Mono.")) AddMethods(structInfo, typeDef, imageDef);
         }
 
         private void AddGenericClassStruct(ulong pointer)
@@ -725,6 +727,7 @@ namespace Il2CppDumper
                 var methodReturnType = il2Cpp.types[methodDef.returnType];
                 var methodReturnTypeSignature = ParseType(methodReturnType);
                 if (methodName == "TypeInfo") methodName = "_" + methodName;
+                if(methodReturnTypeSignature.StartsWith("Steamworks")) continue;
                 var nameUsageCount = 0;
                 if (nameBank.ContainsKey(methodName))
                 {
@@ -751,6 +754,7 @@ namespace Il2CppDumper
                     if (parameterName == "method" || parameterName == "__this") parameterName = "_" + parameterName;
                     var parameterType = il2Cpp.types[parameterDef.typeIndex];
                     var parameterTypeSignature = ParseType(parameterType);
+                    if(parameterTypeSignature.StartsWith("Steamworks")) return;
                     var parameter = new StructMethodParameter
                     {
                         Name = FixName(parameterName),
@@ -919,6 +923,7 @@ namespace Il2CppDumper
         private void ParseArrayClassStruct(Il2CppType il2CppType, Il2CppGenericContext context)
         {
             var structName = GetIl2CppStructName(il2CppType, context);
+            if(structName.StartsWith("Steamworks")) return;
             arrayClassHeader.Append($"struct {structName}_array {{\n" +
                 $"\tIl2CppObject obj;\n" +
                 $"\tIl2CppArrayBounds *bounds;\n" +
@@ -1018,6 +1023,7 @@ namespace Il2CppDumper
 
             if (info.Parent != null)
             {
+                if(info.Parent.StartsWith("Steamworks")) return "";
                 var parentStructName = info.Parent + "_o";
                 pre.Append(RecursionStructInfo(structInfoWithStructName[parentStructName], initializer, staticInitializer, methodsBuilder));
                 sb.Append($"struct {info.TypeName}_Fields : {info.Parent}_Fields {{\n");
@@ -1047,6 +1053,7 @@ namespace Il2CppDumper
             {
                 if (field.IsValueType)
                 {
+                    if(field.FieldTypeName.StartsWith("Steamworks")) return "";
                     var fieldInfo = structInfoWithStructName[field.FieldTypeName];
                     pre.Append(RecursionStructInfo(fieldInfo, initializer, staticInitializer, methodsBuilder));
                 }
@@ -1381,6 +1388,7 @@ namespace Il2CppDumper
 
         private void GenerateMethodInfo(string methodInfoName, string structTypeName, List<StructRGCTXInfo> rgctxs)
         {
+            if(structTypeName.StartsWith("Steamworks")) return;
             if (rgctxs.Count > 0)
             {
                 methodInfoHeader.Append($"struct {methodInfoName}_RGCTXs {{\n");
