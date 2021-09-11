@@ -1148,7 +1148,7 @@ namespace Il2CppDumper
                 // var typePointer = GetPointerString(method, false);
                 var initializerPointer = GetPointerString(method, true, $"{info.TypeName}::{method.MethodName}");
                 staticInitializer.Append($"{initializerPointer} = nullptr;\n");
-                initializeMethod.Append($"\t*(void**)&{info.TypeName}::${method.MethodName} = (void*)getRealAddress(0x{method.Offset:X});\n");
+                initializeMethod.Append($"\t*(void**)&{info.TypeName}::{method.MethodName} = (void*)getRealAddress(0x{method.Offset:X});\n");
             }
             staticInitializer.Append($"static void initialize_{info.TypeName}(uint64_t(*getRealAddress)(uint64_t)){{");
             staticInitializer.Append(initializeMethod);
