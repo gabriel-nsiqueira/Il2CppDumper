@@ -1134,7 +1134,7 @@ namespace Il2CppDumper
 
             if (info.TypeInfoPointer != null && info.TypeInfoPointer.Address > 0)
             {
-                methodsBuilder.Append($"\tstatic {info.TypeInfoPointer.Signature} TypeInfo;\n");
+                methodsBuilder.Append($"\tstatic {info.TypeInfoPointer.Signature}* TypeInfo;\n");
                 staticInitializer.Append($"{info.TypeInfoPointer.Signature} {info.TypeName}::TypeInfo = nullptr;\n");
                 initializer.Append(
                     $"\t*(void**)&{info.TypeName}::TypeInfo = (void*)getRealAddress(0x{info.TypeInfoPointer.Address:X});\n");
