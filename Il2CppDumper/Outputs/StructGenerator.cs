@@ -1135,7 +1135,7 @@ namespace Il2CppDumper
             if (info.TypeInfoPointer != null && info.TypeInfoPointer.Address > 0)
             {
                 methodsBuilder.Append($"\tstatic {info.TypeInfoPointer.Signature}* TypeInfo;\n");
-                staticInitializer.Append($"{info.TypeInfoPointer.Signature} {info.TypeName}::TypeInfo = nullptr;\n");
+                staticInitializer.Append($"{info.TypeInfoPointer.Signature}* {info.TypeName}::TypeInfo = nullptr;\n");
                 initializer.Append(
                     $"\t*(void**)&{info.TypeName}::TypeInfo = (void*)getRealAddress(0x{info.TypeInfoPointer.Address:X});\n");
             }
@@ -1148,7 +1148,7 @@ namespace Il2CppDumper
                 // var typePointer = GetPointerString(method, false);
                 var initializerPointer = GetPointerString(method, true, $"{info.TypeName}::{method.MethodName}");
                 staticInitializer.Append($"{initializerPointer} = nullptr;\n");
-                initializeMethod.Append($"\t*(void**)&{info.TypeName}::{method.MethodName} = (void*)getRealAddress(0x{method.Offset:X});\n");
+                initializeMethod.Append($"\t*(void**)&{info.TypeName}::${method.MethodName} = (void*)getRealAddress(0x{method.Offset:X});\n");
             }
             staticInitializer.Append($"static void initialize_{info.TypeName}(uint64_t(*getRealAddress)(uint64_t)){{");
             staticInitializer.Append(initializeMethod);
